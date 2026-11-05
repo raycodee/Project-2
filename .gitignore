@@ -1,0 +1,6 @@
+/build*/
+*.o
+*.a
+*.exe
+.DS_Store
+/data/events_full.csv
