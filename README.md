@@ -133,15 +133,25 @@ For address and undefined-behavior checks with Clang or GCC:
 ```sh
 cmake -S . -B build-sanitize -DCMAKE_BUILD_TYPE=Debug -DGEVENTS_ENABLE_SANITIZERS=ON
 cmake --build build-sanitize
-ctest --test-dir build-sanitize --output-on-failure
+ctest --test-dir build-sanitize --output-on-failure --timeout 30
 ./build-sanitize/raymond_demo
+```
+
+Validation on this Mac (Apple Clang 17, November 4, 2026): the Release suite passed all three executables and 14 test groups; the direct compiler demo also matched the expected output. A separate UndefinedBehaviorSanitizer-only Debug build passed all three executables. The combined AddressSanitizer/UndefinedBehaviorSanitizer executables hung during AddressSanitizer initialization in the macOS dynamic loader, before entering the tests; bounded retries timed out. AddressSanitizer coverage is therefore unverified on this machine. The passing checks are correctness evidence, not benchmark measurements.
+
+To reproduce the UBSan-only check with Clang or GCC:
+
+```sh
+cmake -S . -B build-ubsan -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS=-fsanitize=undefined -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=undefined
+cmake --build build-ubsan
+ctest --test-dir build-ubsan --output-on-failure --timeout 30
 ```
 
 All project targets compile with strict warnings. Correctness checks and sanitizer runs are not performance benchmarks; Hayden's harness should measure identical normalized datasets and query workloads in optimized builds.
 
 ## Complexity
 
-Let U be distinct keywords, B buckets, P total keyword/ID postings, p a single keyword's posting-list length, w maximum keyword length, N candidate events, C selected categories, L maximum event text length, T maximum tokens per event, and K interest tokens before deduplication. String operations depend on their length.
+Let U be distinct keywords, B buckets, P total keyword/ID postings, p a single keyword's posting-list length, w maximum keyword length, N candidate events, C selected categories, A total selected-category text length, W maximum category length including selections, L maximum event text length, T maximum tokens per event, I total interest text length, and K interest tokens before deduplication. String operations depend on their length; S denotes bytes of returned/copied event payloads.
 
 | Operation | Worst-case time | Notes |
 | --- | --- | --- |
@@ -150,10 +160,10 @@ Let U be distinct keywords, B buckets, P total keyword/ID postings, p a single k
 | Resize | O(B + Uw) | Allocate a new bucket array and relink keyword nodes; posting vectors are not copied |
 | Insert including a resize | O(w(U + 1) + p + B) | Bucket initialization is part of the worst-case cost |
 | Clear/destruction | O(B + U + P) | Walk all chains; release all posting storage |
-| Filter | O(CL + NCL + NL + S) | Category normalization/comparison plus copying S bytes of selected records; without categories, O(N + S) for valid fixed-size dates |
-| Rank | O(KL + wK log(K + 1) + N(L + wT log(T + 1) + wK log(T + 1)) + N log(N + 1) + S) | Normalize interests once; tokenize/sort fields; binary-search interests; sort fixed-format ties; copy S bytes of records |
+| Filter | O(A + N(L + CW) + S) | Category normalization/comparison plus copying S bytes of selected records; without categories, O(N + S) for valid fixed-size dates |
+| Rank | O(I + wK log(K + 1) + N(L + wT log(T + 1) + wK log(T + 1)) + N log(N + 1) + S) | Normalize interests once; tokenize/sort fields; binary-search interests; sort fixed-format ties; copy S bytes of records |
 
-The ranking bound is deliberately conservative: interest input can contain K strings of up to L bytes each. Hash index storage is O(B + Uw + P), in addition to the source dataset. A resize needs O(B) temporary bucket storage. Filters need normalized-category storage and owned result copies. Ranking needs owned result copies, interest/event tokens, and O(log N) sorting stack space. `limit` reduces the returned result count, but all candidates are still scored and sorted.
+Hash index storage is O(B + Uw + P), in addition to the source dataset. A resize needs O(B) temporary bucket storage. Filters need normalized-category storage and owned result copies. Ranking needs owned result copies, interest/event tokens, and O(log N) sorting stack space. `limit` reduces the returned result count, but all candidates are still scored and sorted.
 
 See `docs/raymond-report-sections.md` for report source and integration caveats.
 
